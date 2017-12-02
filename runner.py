@@ -80,7 +80,7 @@ def isolated_batch_call(f, arguments):
         result_generator = f(*arguments)
         result = list(result_generator)
         q.put(result)
-        
+
     q = multiprocessing.Queue()
     p = multiprocessing.Process(target=lf, args=(q, ))
     p.start()
@@ -158,8 +158,8 @@ def evaluate(points, centers):
         batch = np.array(chunk)
         score += np.square(batch[:,np.newaxis,:] - centers).sum(axis=2).min(axis=1).sum()
     return score / points.shape[0]
-    
-    
+
+
 def run(sourcestring, training_file, test_file, batch, log):
     mod = import_from_file(sourcestring)
     training_data = np.load(training_file)
@@ -183,7 +183,7 @@ def main():
         '--log', '-l', help='Enable logging for debugging', action='store_true')
     args = parser.parse_args()
     BATCH = 3000
-    
+
     with open(args.source_file, "r") as fin:
         source = fin.read()
 
