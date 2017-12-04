@@ -10,15 +10,17 @@ class Clustering():
         self.N = X.shape[0]
         self.mu = None
         self.clusters = None
-        if weights != None:
-            self.weights = weights
-        else:
+        if weights is None:
             self.weights = np.ones(self.N)
+        else:
+            self.weights = weights
 
     def _init_mu_with_d2(self):
         self.mu = [self.X[np.random.randint(self.N)]]
+        self._distance_to_center()
         while len(self.mu) < self.K:
             self.mu.append(self._imp_sampling())
+            self._update_dist_to_center()
 
     def _init_mu_with_random(self):
         idx = np.random.randint(self.N, size=self.K)
@@ -26,9 +28,11 @@ class Clustering():
 
     def _init_mu_with_mix(self, ratio):
         self.mu = [self.X[np.random.randint(self.N)]]
+        self._distance_to_center()
         n = int(ratio*self.K)
         while len(self.mu) < n:
             self.mu.append(self._imp_sampling())
+            self._update_dist_to_center()
         idx = np.random.randint(self.N, size=(self.K-n))
         self.mu += [self.X[i] for i in idx]
 
@@ -37,6 +41,12 @@ class Clustering():
         X = self.X
         self.D2 = np.array([min([np.linalg.norm(x-c)**2 for c in cent]) for x in X])
 
+    def _update_dist_to_center(self):
+        new_c = self.mu[-1]
+        X = self.X
+        self.D2_ = np.array([np.linalg.norm(x-new_c)**2 for x in X])
+        self.D2 = np.minimum(self.D2, self.D2_)
+
     def _cluster_data(self):
         cent = self.mu
         X = self.X
@@ -44,7 +54,7 @@ class Clustering():
         self.clusters = [np.where(self.best_mu_idx==i)[0] for i in range(self.K)]
 
     def _imp_sampling(self):
-        self._distance_to_center()
+        # self._distance_to_center()
         probs = self.D2 / self.D2.sum()
         cumprobs = probs.cumsum()
         r = np.random.random()
@@ -56,9 +66,9 @@ class Coresets(Clustering):
     def construct_coreset(self, M):
         t0 = time()
         self._init_mu_with_d2()
-        self._distance_to_center()
+        # self._distance_to_center()
         self._cluster_data()
-        alpha = 16*(np.log(self.K)+2)
+        alpha = 16*(np.log2(self.K)+2)
         c_phi = self.D2.sum()/self.N
         D2_b = [self.D2[g].sum() for g in self.clusters]
         Size_b = [len(g) for g in self.clusters]
@@ -106,7 +116,7 @@ class WeightedKmeans(Clustering):
               .format(method=method, T=time()-t0))
 
         print("Updating K-means...")
-        for i in range(10):
+        for i in range(4):
             if self._has_converged():
                 print("Converged!")
                 break
@@ -124,33 +134,39 @@ class WeightedKmeans(Clustering):
 def mapper(key, value):
     # key: None
     # value: 2d numpy array of shape (num_ins, num_dims)
-    n_split = 5
-    num_per_split = value.shape[0] / n_split
-    np.random.shuffle(value)
-    samples = []
-    weights = []
-    for i in range(n_split):
-        C = Coresets(num_per_split/20, value[i*num_per_split:(i+1)*num_per_split])
-        s, w = C.construct_coreset(num_per_split/5)
-        samples.append(s)
-        weights.append(w)
-    samples = np.vstack(samples)
-    weights = np.hstack(weights)
 
-    C2 = Coresets(30, samples, weights)
-    samples2, weights2 = C2.construct_coreset(200)
+    # n_split = 5
+    # num_per_split = value.shape[0] / n_split
+    # np.random.shuffle(value)
+    # samples_ = []
+    # weights_ = []
+    # for i in range(n_split):
+    #     C = Coresets(num_per_split/30, value[i*num_per_split:(i+1)*num_per_split])
+    #     s, w = C.construct_coreset(num_per_split/3)
+    #     samples_.append(s)
+    #     weights_.append(w)
+    # samples_ = np.vstack(samples_)
+    # weights_ = np.hstack(weights_)
 
-    print("Compressed data {S} to {S2}".format(S=value.shape, S2=samples2.shape))
-    yield 0, np.hstack((weights2[:,np.newaxis], samples2))
+    # C = Coresets(30, samples_, weights_)
+    # samples, weights = C.construct_coreset(250)
+
+    ## C = Coresets(200, value)
+    ## samples, weights = C.construct_coreset(2000)
+
+    ## print("Compressed data {S} to {S2}".format(S=value.shape, S2=samples.shape))
+    ## yield 0, np.hstack((weights[:,np.newaxis], samples))
+    yield 0, value
 
 def reducer(key, values):
     # key: key from mapper used to aggregate
     # values: concatenation of the values emitted by the mappers
 
-    coresets = values[:, 1:]
-    weights = values[:, 0]
-    WKmeans = WeightedKmeans(200, coresets, weights)
-    # centers = WKmeans.find_centers(method="d2")
-    centers = WKmeans.find_centers(method="mix", ratio=0.5)
+    # coresets = values[:, 1:]
+    # weights = values[:, 0]
+    # WKmeans = WeightedKmeans(200, coresets, weights)
+    WKmeans = WeightedKmeans(200, values)
+    centers = WKmeans.find_centers(method="d2")
+    # centers = WKmeans.find_centers(method="mix", ratio=0.6)
 
     yield np.array(centers)
